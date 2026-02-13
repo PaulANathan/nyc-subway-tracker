@@ -1,0 +1,32 @@
+{
+  "name": "nyc-subway-tracker",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A high-performance geospatial application visualizing live MTA transit data using CesiumJS.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PaulANathan/nyc-subway-tracker.git"
+  },
+  "keywords": [
+    "cesium",
+    "geospatial",
+    "mta",
+    "transit",
+    "gtfs-realtime"
+  ],
+  "author": "Paul A. Nathan",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/PaulANathan/nyc-subway-tracker/issues"
+  },
+  "homepage": "https://github.com/PaulANathan/nyc-subway-tracker#readme",
+  "dependencies": {
+    "gtfs-realtime-bindings": "^1.1.1",
+    "node-fetch": "^3.3.2"
+  }
+}
