@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>NYC Subway Live Tracker</title>
+  
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.138/Build/Cesium/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.138/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+
+  <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+
+  <link rel="stylesheet" href="./css/style.css">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+</head>
+
+<body>
+  
+  <div id="ui-overlay-header">
+    <div class="line-badge">M</div>
+    <span class="title">NYC Subway Live Tracker</span>
+    <button id="home-button" title="Reset View"><span class="material-icons">home</span></button>
+    <button id="top-down-button" title="Top-down View"><span class="material-icons">grid_4x4</span></button>
+    <button id="toggle-model-button" title="Toggle Model">Model: ON</button>
+  </div>
+
+  <div id="cesiumContainer"></div>
+
+  <script src="./js/utils.js"></script>
+  <script src="./js/main.js"></script>
+
+</body>
+
+</html>
