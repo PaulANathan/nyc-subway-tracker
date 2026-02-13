@@ -3,9 +3,12 @@ import fetch from 'node-fetch';
 import fs from 'fs';
 import path from 'path';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const getStopLookup = () => {
     try {
-        const filePath = path.join(process.cwd(), 'stops.txt');
+        const filePath = path.join(__dirname, 'stops.txt'); 
         const csvData = fs.readFileSync(filePath, 'utf8');
         
         const lines = csvData.split('\n');
