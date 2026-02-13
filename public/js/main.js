@@ -209,7 +209,7 @@ async function updateTrains() {
         const trainSpeed = 18; // We set our average subway speed (m/s)
 
         // We fetch our train data from our custom Vercel Proxy server
-        const response = await fetch('https://mta-proxy.vercel.app/api/subway');
+        const response = await fetch('/api/subway');
         const allTrains = await response.json();
 
         // We use a chunk processor to spread the work across multiple frames.
@@ -399,7 +399,7 @@ function createNewTrain(train, newPos, currentTime) {
 // Sets up the Cesium Viewer with Cesium World Terrain and custom stylized settings
 async function initCesium() {
     // We fetch our API token from a secure backend
-    const configResponse = await fetch('https://mta-proxy.vercel.app/api/config');
+    const configResponse = await fetch('/api/config');
     const configData = await configResponse.json();
     
     if (configData.cesiumToken) {
