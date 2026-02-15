@@ -6,43 +6,47 @@
  * custom shaders, and real-time data feeds provided by Metropolitan Transportation Authority (MTA).
  */
 
-let viewer;
-
 // We initialize the token as empty. It will be fetched securely from our backend 
 // to avoid exposing sensitive keys in the client-side source code.
 Cesium.Ion.defaultAccessToken = '';
 
-let tileset_customModel;
-let tileset_nycBuildings;
+const appState = {
 
-// Stores building IDs so we can hide them
-let hideConditions;
+    isLoaded: false,
+    isUpdating: false, // Mutex lock to prevent overlapping network requests
+    
+    // Cesium Core
+    viewer: null,
+    
+    // 3D Assets
+    tileset_customModel: null,
+    tileset_nycBuildings: null,
+    hideConditions: [],
 
-let subwayLinesData = null;
-const trainEntities = {};
+    // Subway Line Data
+    subwayLinesData: null,
+    routeMap: {},
+    flattenedRouteMap: {},
+    
+    // Train Tracking
+    trainEntities: {},
+    lastKnownCoords: {},
+    lastSeenTimes: {},
+    isUpdating: false,
 
-// Flattening the route map allows for optimized O(1) lookups during high-frequency updates
-let flattenedRouteMap = {};
-
-// Prevents visual "jumping" when IDs are recycled by the live data feed
-const lastKnownCoords = {};
-
-// Used to garbage collect "ghost trains" that vanish from the feed
-const lastSeenTimes = {};
-
-// Mutex lock to prevent overlapping network requests
-let isUpdating = false;
-
-// UI Elements
-let resetViewButton;
-let topdownViewButton;
-let toggleModelButton;
+    // UI Elements
+    ui: {
+        resetViewButton: null,
+        topdownViewButton: null,
+        toggleModelButton: null
+    }
+};
 
 // --- Button Handler Functions ---
 
 // Resets the camera to the default view
 function flyToHome() {
-    viewer.camera.flyTo({
+    appState.viewer.camera.flyTo({
         destination: Cesium.Cartesian3.fromDegrees(-74.028, 40.698, 600),
         orientation: {
             heading: Cesium.Math.toRadians(50.0),
@@ -55,7 +59,7 @@ function flyToHome() {
 
 // Moves camera to a top-down view
 function flyToTopDown() {
-    viewer.camera.flyTo({
+    appState.viewer.camera.flyTo({
         destination: Cesium.Cartesian3.fromDegrees(-74.0030, 40.7060, 6000), 
         orientation: {
             heading: Cesium.Math.toRadians(33.5),
@@ -68,11 +72,13 @@ function flyToTopDown() {
 
 // Toggles the Custom 3D Model's visibility and hides overlapping buildings in the ion NYC tileset
 function toggleModel() {
+    const { tileset_customModel, tileset_nycBuildings, hideConditions, ui } = appState;
+
     tileset_customModel.show = !tileset_customModel.show;
 
     if (tileset_customModel.show) {
-        toggleModelButton.classList.remove('is-off');
-        toggleModelButton.innerText = "Model: ON";
+        ui.toggleModelButton.classList.remove('is-off');
+        ui.toggleModelButton.innerText = "Model: ON";
 
         if (!(hideConditions && hideConditions.length > 0)) return;
 
@@ -86,8 +92,8 @@ function toggleModel() {
         });
     }
     else {
-        toggleModelButton.classList.add('is-off');
-        toggleModelButton.innerText = "Model: OFF";
+        ui.toggleModelButton.classList.add('is-off');
+        ui.toggleModelButton.innerText = "Model: OFF";
         
         // Show all buildings when custom model is hidden
         tileset_nycBuildings.style = new Cesium.Cesium3DTileStyle({
@@ -100,13 +106,15 @@ function toggleModel() {
 // --- Data Loading Functions ---
 
 // Fetches subway line data and renders it in our scene
-async function loadSubwayLines() {
+async function loadSubwayLines(state) {
+    const { viewer } = state;
+
     try {
         const response = await fetch('https://data.ny.gov/api/geospatial/s692-irgq?method=export&format=GeoJSON');
-        subwayLinesData = await response.json();
+        state.subwayLinesData = await response.json();
         
         // We pre-process the NYC subway tracks for easy lookup
-        subwayLinesData.features.forEach(feature => {
+        state.subwayLinesData.features.forEach(feature => {
             const service = feature.properties.service;
             if (!service) return;
 
@@ -125,16 +133,16 @@ async function loadSubwayLines() {
 
                 // We only associate track geometry with a line if the colors match
                 if (lineColorHex === trackColorHex) {
-                    if (!flattenedRouteMap[lineKey]) {
-                        flattenedRouteMap[lineKey] = [];
+                    if (!state.flattenedRouteMap[lineKey]) {
+                        state.flattenedRouteMap[lineKey] = [];
                     }
-                    flattenedRouteMap[lineKey].push(...flat.features);
+                    state.flattenedRouteMap[lineKey].push(...flat.features);
                 }
             });
         });
 
-        // We load data into a Data Source, then transfer to Primitives
-        const subwaySource = await Cesium.GeoJsonDataSource.load(subwayLinesData, {
+        // We draw the subway tracks
+        const subwaySource = await Cesium.GeoJsonDataSource.load(state.subwayLinesData, {
             stroke: Cesium.Color.TRANSPARENT,
             fill: Cesium.Color.TRANSPARENT
         });
@@ -153,15 +161,16 @@ async function loadSubwayLines() {
 }
 
 // Loads and stylizes our 3D building tilesets
-async function loadBuildings()
-{
+async function loadBuildings(state) {
+    const { viewer } = state;
+
     try {
         // We load the custom model from Cesium Ion 
-        tileset_customModel = await Cesium.Cesium3DTileset.fromIonAssetId(4428924);
-        viewer.scene.primitives.add(tileset_customModel);
+        state.tileset_customModel = await Cesium.Cesium3DTileset.fromIonAssetId(4428924);
+        viewer.scene.primitives.add(state.tileset_customModel);
 
         // We apply a custom GLSL shader to the tiled buildings to enhance the night-mode aesthetic.
-        tileset_customModel.customShader = new Cesium.CustomShader({
+        state.tileset_customModel.customShader = new Cesium.CustomShader({
             fragmentShaderText: `
                 void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) {
                     material.diffuse = material.diffuse * 1.5;
@@ -175,19 +184,19 @@ async function loadBuildings()
 
     try {
         // We load the NYC buildings from Cesium Ion
-        tileset_nycBuildings = await Cesium.Cesium3DTileset.fromIonAssetId(75343);
-        viewer.scene.primitives.add(tileset_nycBuildings);
+        state.tileset_nycBuildings = await Cesium.Cesium3DTileset.fromIonAssetId(75343);
+        viewer.scene.primitives.add(state.tileset_nycBuildings);
 
         // We fetch a list of building IDs that overlap with our custom model so we can hide them.
         const response = await fetch('./assets/hiddenBuildings.json');
         const hiddenBuildingIDs = await response.json();
-        hideConditions = hiddenBuildingIDs.map(id => [`\${SOURCE_ID} === "${id}"`, "false"]);
-        hideConditions.push([true, true]);
+        state.hideConditions = hiddenBuildingIDs.map(id => [`\${SOURCE_ID} === "${id}"`, "false"]);
+        state.hideConditions.push([true, true]);
 
-        tileset_nycBuildings.style = new Cesium.Cesium3DTileStyle({
+        state.tileset_nycBuildings.style = new Cesium.Cesium3DTileStyle({
             color: 'color("grey", 1.0)',
             show: {
-            conditions : hideConditions
+            conditions : state.hideConditions
             },
         });
     } catch (error) {
@@ -198,14 +207,14 @@ async function loadBuildings()
 // --- Train Update Functions ---
 
 // Polls our custom middleware API for live train data
-async function updateTrains() {
+async function updateTrains(state) {
     // We skip this update if data is not ready, or a previous request is still pending
-    if (!subwayLinesData || !flattenedRouteMap || isUpdating) return;
+    if (!state.subwayLinesData || !state.flattenedRouteMap || state.isUpdating) return;
     
-    isUpdating = true;
+    state.isUpdating = true;
 
     try {
-        const currentTime = viewer.clock.currentTime;
+        const currentTime = state.viewer.clock.currentTime;
         const trainSpeed = 18; // We set our average subway speed (m/s)
 
         // We fetch our train data from our custom Vercel Proxy server
@@ -217,28 +226,28 @@ async function updateTrains() {
         chunkProcessor(
             allTrains, 
             (train) => {
-                processTrain(train, currentTime, trainSpeed);
+                processTrain(state, train, currentTime, trainSpeed);
             },
             () => {
-                isUpdating = false;
+                state.isUpdating = false;
             }
         );
 
     } catch (e) { 
         console.error("Update failed", e); 
-        isUpdating = false;
+        state.isUpdating = false;
     }
 }
 
 // Processes train data
-function processTrain(train, currentTime, targetSpeed) {
+function processTrain(state, train, currentTime, targetSpeed) {
     const trainId = train.id;
     const rawPos = Cesium.Cartesian3.fromDegrees(train.lon, train.lat, 5);
-    let entity = trainEntities[trainId];
-    lastSeenTimes[trainId] = Date.now();
+    let entity = state.trainEntities[trainId];
+    state.lastSeenTimes[trainId] = Date.now();
 
     // We don't proceed if the data jumps positions or the train is stationary.
-    if (handleUnwantedBehavior(train, rawPos, entity, currentTime)) return;
+    if (handleUnwantedBehavior(state, train, rawPos, entity, currentTime)) return;
 
     // We find where the train should be on the tracks.
     const snapResult = findPositionAlongTrack(train, rawPos);
@@ -247,17 +256,17 @@ function processTrain(train, currentTime, targetSpeed) {
 
     // We update the existing entity or create a new one.
     if (entity) {
-        updateTrainAnimation(entity, newPos, closestLine, snappedNew, currentTime, targetSpeed);
+        updateTrainAnimation(state, entity, newPos, closestLine, snappedNew, currentTime, targetSpeed);
     } else {
-        createNewTrain(train, newPos, currentTime);
+        createNewTrain(state, train, newPos, currentTime);
     }
 }
 
 // Guard train animation from unexpected behavior
-function handleUnwantedBehavior(train, rawPos, entity, currentTime) {
-    if (!entity || !lastKnownCoords[train.id]) return false;
+function handleUnwantedBehavior(state, train, rawPos, entity, currentTime) {
+    if (!entity || !state.lastKnownCoords[train.id]) return false;
 
-    const dist = Cesium.Cartesian3.distance(lastKnownCoords[train.id], rawPos);
+    const dist = Cesium.Cartesian3.distance(state.lastKnownCoords[train.id], rawPos);
 
     // We guard against teleportation by checking if a train moves > 2km in 15 seconds 
     // If so, we assume it's a recycled train ID in the live data feed.
@@ -267,14 +276,14 @@ function handleUnwantedBehavior(train, rawPos, entity, currentTime) {
         setupProperty(jumpProp);
         jumpProp.addSample(currentTime, rawPos);
         entity.position = jumpProp;
-        lastKnownCoords[train.id] = rawPos;
+        state.lastKnownCoords[train.id] = rawPos;
         return true;
     }
 
     // We pause the train's animation if the feed explicitly says the train's status is "stopped".
     if (train.status === 1) {
         entity.position.addSample(currentTime, rawPos);
-        lastKnownCoords[train.id] = rawPos;
+        state.lastKnownCoords[train.id] = rawPos;
         return true;
     }
 
@@ -283,7 +292,7 @@ function handleUnwantedBehavior(train, rawPos, entity, currentTime) {
 
 // We align the noisy real-time position data to the subway tracks.
 function findPositionAlongTrack(train, rawPos) {
-    const flatSegments = flattenedRouteMap[train.route];
+    const flatSegments = appState.flattenedRouteMap[train.route];
     if (!flatSegments || flatSegments.length === 0) return null;
 
     const rawTrainPoint = turf.point([train.lon, train.lat]);
@@ -312,7 +321,7 @@ function findPositionAlongTrack(train, rawPos) {
 
 // We update the train's movement using temporal interpolation.
 // Instead of jumping between points, we build an animation path to follow the curvature of the track geometry.
-function updateTrainAnimation(entity, newPos, closestLine, snappedNew, currentTime, targetSpeed) {
+function updateTrainAnimation(state, entity, newPos, closestLine, snappedNew, currentTime, targetSpeed) {
     const trainId = entity.id;
 
     // We get the current interpolated position
@@ -359,18 +368,18 @@ function updateTrainAnimation(entity, newPos, closestLine, snappedNew, currentTi
 
     // We assign the new property and update the last position.
     entity.position = newProperty;
-    lastKnownCoords[trainId] = newPos; 
+    state.lastKnownCoords[trainId] = newPos; 
 }
 
 //Creates new train entities
-function createNewTrain(train, newPos, currentTime) {
+function createNewTrain(state, train, newPos, currentTime) {
     const property = new Cesium.SampledPositionProperty();
     setupProperty(property);
     property.addSample(currentTime, newPos);
 
     // We create entities to visually represent the trains using the Entity API.
     // Note: For production apps using large amounts of entities, consider PrimitiveCollections for optimization.
-    trainEntities[train.id] = viewer.entities.add({
+    state.trainEntities[train.id] = state.viewer.entities.add({
         id: train.id,
         position: property,
         point: { 
@@ -391,7 +400,7 @@ function createNewTrain(train, newPos, currentTime) {
         }
     })
 
-    lastKnownCoords[train.id] = newPos;
+    state.lastKnownCoords[train.id] = newPos;
 }
 
 // --- Initialization Functions ---
@@ -402,62 +411,75 @@ async function initCesium() {
     const configResponse = await fetch('/api/config');
     const configData = await configResponse.json();
     
-    if (configData.cesiumToken) {
-        Cesium.Ion.defaultAccessToken = configData.cesiumToken;
-    } else {
-        throw new Error("Token not found in config response");
+    if (!configData.cesiumToken) throw new Error("Token not found in config response");
+    Cesium.Ion.defaultAccessToken = configData.cesiumToken;
+
+    try {
+        const viewerOptions = {
+            terrain: Cesium.Terrain.fromWorldTerrain(),
+
+            // Prevent Bing Imagery Sessions
+            baseLayer: false,
+            baseLayerPicker: false,
+
+            // Disable UI widgets
+            infoBox: false,
+            animation: false,
+            timeline: false,
+            geocoder: false,
+            homeButton: false,
+            sceneModePicker: false,
+
+            // Performance
+            shadows: false,
+            requestRenderMode: false,
+            targetFrameRate: 60,
+        };
+
+        const viewer = new Cesium.Viewer("cesiumContainer", viewerOptions);
+
+        // NOTE: Using Sentinel-2 as an alternative to default Bing imagery due to Cesium Ion "Imagery Sessions" quota
+        const sentinelImagery = await Cesium.IonImageryProvider.fromAssetId(3954);
+        const sentinelLayer = viewer.imageryLayers.addImageryProvider(sentinelImagery);
+
+        // We alter the imagery style to create a dark mode effect
+        sentinelLayer.brightness = 0.2;
+        sentinelLayer.contrast = 0.8;
+        sentinelLayer.saturation = 0.2;
+        sentinelLayer.hue = 0.6;
+
+        // We alter the environment style to create a dark mode effect
+        const { scene } = viewer;
+        scene.sun.show = false;
+        scene.moon.show = false;
+        scene.skyAtmosphere.show = false;
+        scene.skyBox.show = false;
+        scene.backgroundColor = Cesium.Color.BLACK;
+        scene.globe.showGroundAtmosphere = false;
+        scene.globe.baseColor = Cesium.Color.BLACK;
+        scene.fog.enabled = false;
+        scene.fog.color = Cesium.Color.BLACK;
+
+        // We set our initial camera view
+        viewer.camera.setView({
+            destination: Cesium.Cartesian3.fromDegrees(-74.028, 40.698, 600),
+            orientation: {
+                heading: Cesium.Math.toRadians(50.0),
+                pitch: Cesium.Math.toRadians(-20.0),
+                roll: 0.0
+            }
+        });
+
+        return viewer;
+
+    } catch (error) {
+        console.error("Cesium Initialization Error:", error);
     }
-    
-    // We create our Cesium Viewer
-    viewer = new Cesium.Viewer('cesiumContainer', {
-        terrain: Cesium.Terrain.fromWorldTerrain(),      
-        baseLayerPicker: false,
-        infoBox: false,
-        animation: false,
-        timeline: false,
-        geocoder: false,
-        homeButton: false,
-        sceneModePicker: false,
-    });
-
-    // We set our initial camera view
-    viewer.camera.setView({
-        destination: Cesium.Cartesian3.fromDegrees(-74.028, 40.698, 600),
-        orientation: {
-            heading: Cesium.Math.toRadians(50.0),
-            pitch: Cesium.Math.toRadians(-20.0),
-            roll: 0.0
-        }
-    });
-
-    // We alter the scene's style to create a dark mode effect
-    const layers = viewer.imageryLayers;
-    const baseLayer = layers.get(0);
-    baseLayer.brightness = 0.2;
-    baseLayer.contrast = 0.8;
-    baseLayer.saturation = 0.2;
-    baseLayer.hue = 0.6;
-
-    viewer.scene.sun.show = false;
-    viewer.scene.moon.show = false;
-    viewer.scene.skyAtmosphere.show = false;
-    viewer.scene.skyBox.show = false;
-    viewer.scene.backgroundColor = Cesium.Color.BLACK;
-    viewer.scene.globe.showGroundAtmosphere = false;
-
-    viewer.scene.fog.enabled = false;
-    viewer.scene.fog.color = Cesium.Color.BLACK;
-    viewer.scene.fog.minimumBrightness = 0.0;
-
-    viewer.shadows = false
-
-    viewer.scene.requestRenderMode = false;
-    viewer.targetFrameRate = 60;
-
-    return viewer;
 }
 
-function initClock() {
+function initClock(state) {
+    const { viewer } = state;
+    
     const now = Cesium.JulianDate.now();
 
     // We start the simulation slightly in the past to buffer data.
@@ -470,30 +492,35 @@ function initClock() {
 }
 
 // Assigns buttons to their respective handler functions
-function setupUI() {
-    resetViewButton = document.getElementById('home-button');
-    topdownViewButton = document.getElementById('top-down-button');
-    toggleModelButton = document.getElementById('toggle-model-button');
+function setupUI(state) {
+    state.ui.resetViewButton = document.getElementById('home-button');
+    state.ui.topdownViewButton = document.getElementById('top-down-button');
+    state.ui.toggleModelButton = document.getElementById('toggle-model-button');
     
-    resetViewButton.addEventListener('click', flyToHome);
-    topdownViewButton.addEventListener('click', flyToTopDown);
-    toggleModelButton.addEventListener('click', toggleModel);
+    state.ui.resetViewButton.addEventListener('click', flyToHome);
+    state.ui.topdownViewButton.addEventListener('click', flyToTopDown);
+    state.ui.toggleModelButton.addEventListener('click', toggleModel);
 }
 
 // Starts up the application
 async function initApp() {
     try {
-        await initCesium();
-        initClock();
-        setupUI();
+        setupUI(appState);
+
+        appState.viewer = await initCesium();
+
+        initClock(appState);
 
         // We load in the static data.
-        await loadBuildings();  
-        await loadSubwayLines(); 
+        await loadBuildings(appState);  
+        await loadSubwayLines(appState); 
         
         // We start the update loop for the train's real-time data feed.
-        updateTrains();
-        setInterval(updateTrains, 20000);
+        updateTrains(appState);
+
+        setInterval(() => updateTrains(appState), 20000);
+
+        appState.isLoaded = true;
 
     } catch (error) {
         console.error("Initialization Error:", error);
