@@ -5,26 +5,6 @@
  * UI performance, and spatial properties within CesiumJS.
  */
 
-// Processes large datasets in small batches to maintain FPS performance 
-// by spreading the work across multiple frames
-function chunkProcessor(items, processFn, onComplete, batchSize = 15) {
-    let index = 0;
-    function run() {
-        const end = Math.min(index + batchSize, items.length);
-        for (; index < end; index++) {
-            processFn(items[index]);
-        }
-
-        // If there is more data, schedule the next batch for the next browser paint
-        if (index < items.length) {
-            requestAnimationFrame(run);
-        } else if (onComplete) {
-            onComplete();
-        }
-    }
-    run();
-}
-
 // Returns the official MTA color for a given subway line
 function getMTAColor(line) {
     if (!line) return Cesium.Color.WHITE;
@@ -51,10 +31,44 @@ function getMTAColor(line) {
     return Cesium.Color.fromCssColorString(hex);
 }
 
+function getTrunkFromService(service) {
+    const s = service.toUpperCase();
+    if (s.match(/[123]/)) return '7th-Ave';
+    if (s.match(/[456]/)) return 'Lexington';
+    if (s.match(/[ACE]/)) return '8th-Ave';
+    if (s.match(/[BDFM]/)) return '6th-Ave';
+    if (s.match(/[NQRW]/)) return 'Broadway';
+    if (s.includes('7')) return 'Flushing';
+    if (s.includes('L')) return 'Canarsie';
+    if (s.includes('G')) return 'Crosstown';
+    if (s.match(/[JZ]/)) return 'Archer';
+    if (s.includes('SIR')) return 'Staten-Island';
+    return null;
+}
+
+// Processes large datasets in small batches to maintain FPS performance 
+// by spreading the work across multiple frames
+function chunkProcessor(items, processFn, onComplete, batchSize = 15) {
+    let index = 0;
+    function run() {
+        const end = Math.min(index + batchSize, items.length);
+        for (; index < end; index++) {
+            processFn(items[index]);
+        }
+
+        // If there is more data, schedule the next batch for the next browser paint
+        if (index < items.length) {
+            requestAnimationFrame(run);
+        } else if (onComplete) {
+            onComplete();
+        }
+    }
+    run();
+}
+
 // Configures a SampledPositionProperty for optimal visualization
 function setupProperty(prop) {
-    // We set forwardExtrapolationType to HOLD to prevent trains 
-    // from flying off into space if the live data feed lags.
+    // We set this to HOLD to prevent trains moving off their tracks when the data feed lags.
     prop.forwardExtrapolationType = Cesium.ExtrapolationType.HOLD;
 
     // We use LinearApproximation for subways because they follow straight-line segments 
