@@ -306,13 +306,13 @@ async function loadBuildings(state) {
         // We fetch a list of building IDs that overlap with our custom model so we can hide them.
         const response = await fetch('./assets/hiddenBuildings.json');
         const hiddenBuildingIDs = await response.json();
-        state.hideConditions = hiddenBuildingIDs.map(id => [`\${SOURCE_ID} === "${id}"`, "false"]);
-        state.hideConditions.push([true, true]);
+        state.hiddenBuildings = hiddenBuildingIDs.map(id => [`\${SOURCE_ID} === "${id}"`, "false"]);
+        state.hiddenBuildings.push([true, true]);
 
         state.tileset_nycBuildings.style = new Cesium.Cesium3DTileStyle({
             color: 'color("grey", 1.0)',
             show: {
-            conditions : state.hideConditions
+                conditions : state.hiddenBuildings
             },
         });
     } catch (error) {
@@ -334,7 +334,7 @@ async function updateTrains(state) {
         const trainSpeed = 18; // We set our average subway speed (m/s)
 
         // We fetch our train data from our custom Vercel Proxy server.
-        const response = await fetch('https://mta-proxy.vercel.app/api/subway');
+        const response = await fetch('/api/subway');
         const allTrains = await response.json();
 
         // We use a chunk processor to spread the work across multiple frames.
@@ -526,7 +526,7 @@ function createNewTrain(state, train, newPos, currentTime) {
 // Sets up the Cesium Viewer with Cesium World Terrain and custom stylized settings
 async function initCesium() {
     // We fetch our API token from a secure backend.
-    const configResponse = await fetch('https://mta-proxy.vercel.app/api/config');
+    const configResponse = await fetch('/api/config');
     const configData = await configResponse.json();
     
     if (!configData.cesiumToken) throw new Error("Token not found in config response");
@@ -614,10 +614,17 @@ function setupUI(state) {
     state.ui.resetViewButton = document.getElementById('home-button');
     state.ui.topdownViewButton = document.getElementById('top-down-button');
     state.ui.toggleModelButton = document.getElementById('toggle-model-button');
-    
+    const sidePanel = document.getElementById('side-panel');
+    const sidePanelHeader = sidePanel.querySelector('.panel-header');
+    const sidePanelHeaderIcon = document.querySelector('#panel-toggle-btn .material-icons');
+
     state.ui.resetViewButton.addEventListener('click', flyToHome);
     state.ui.topdownViewButton.addEventListener('click', flyToTopDown);
     state.ui.toggleModelButton.addEventListener('click', toggleModel);
+    sidePanelHeader.addEventListener('click', () => {
+        const isCollapsed = sidePanel.classList.toggle('collapsed');        
+        sidePanelHeaderIcon.innerText = isCollapsed ? 'expand_more' : 'expand_less';
+    });
 }
 
 // Starts up the application

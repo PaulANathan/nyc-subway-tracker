@@ -6,6 +6,11 @@ html, body, #cesiumContainer {
   overflow: hidden; 
   background-color: #000; 
 }
+.material-icons {
+    font-size: 12px;
+}
+
+/* HEADER & TITLE */
 #ui-overlay-header {
   position: absolute; top: 0; left: 0; width: 100%; z-index: 9999;
   background: linear-gradient(to bottom, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0) 100%);
@@ -14,30 +19,14 @@ html, body, #cesiumContainer {
   z-index: 999; 
   pointer-events: none;
 }
-.line-badge {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  background: #FF6319;
-  color: white;
-  font-family: 'Helvetica Neue', Arial, sans-serif;
-  font-weight: bold;
-  font-size: 14px;
-  cursor: pointer;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-  margin-right: 15px;
-}
 .title { 
   font-weight: 300; 
   letter-spacing: 4px; 
   font-size: 1.2rem; 
   text-transform: uppercase; 
 }
+
+/* NAVIGATION BUTTONS (Home / Top-Down) */
 #home-button, #top-down-button {
   background: rgba(40, 40, 40, 0.8);
   color: white;
@@ -59,6 +48,8 @@ html, body, #cesiumContainer {
   background: #ff6319;
   border-color: #ff6319;
 }
+
+/* TOGGLE MODEL BUTTON */
 #toggle-model-button {
   background: rgba(40, 40, 40, 0.8);
   color: white;
@@ -97,28 +88,95 @@ html, body, #cesiumContainer {
   transform: translateY(0);
   box-shadow: none;
 }
-.material-icons {
-    font-size: 12px;
+
+/* SIDE PANEL */
+#side-panel {
+  position: absolute;
+  top: 70px;
+  left: 20px;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  transition: all 0.4s ease-in-out;
 }
 #line-toggle-container {
-  position: absolute;
-  top: 100px;
-  left: 20px;
+  padding: 15px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  z-index: 10000;
-  pointer-events: auto;
+  overflow-y: auto;
+  max-height: 100vh;
+  transition: max-height 0.4s ease-in-out, padding 0.4s ease-in-out, opacity 0.3s;
+  opacity: 1;
+}
+#side-panel.collapsed #line-toggle-container {
+  max-height: 0;
+  padding: 0;
+  opacity: 0;
+  overflow: hidden;
+}
+#panel-toggle-btn {
+  background: none;
+  border: none;
+  color: white;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+#line-toggle-container::-webkit-scrollbar {
+  width: 4px;
+}
+#line-toggle-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+}
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 15px;
+  cursor: pointer;
+  color: white;
+  font-family: 'Helvetica Neue', sans-serif;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  background: rgba(40, 40, 40, 0.8);
 }
 .group-row {
   display: flex;
   flex-direction: row;
   gap: 6px;
   align-items: center;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(40, 40, 40, 0.8);
   padding: 4px 8px;
   border-radius: 20px;
   width: fit-content;
+}
+
+/* LINE TOGGLES */
+.line-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: #FF6319;
+  color: white;
+  font-family: 'Helvetica Neue', Arial, sans-serif;
+  font-weight: bold;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  margin-right: 15px;
 }
 .line-toggle-btn {
   width: 32px;
@@ -154,13 +212,8 @@ html, body, #cesiumContainer {
   filter: grayscale(1);
   opacity: 0.6;
 }
-#line-toggle-container::-webkit-scrollbar {
-  width: 4px;
-}
-#line-toggle-container::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 2px;
-}
+
+/* GROUP TOGGLES */
 .master-toggle-btn {
     width: 24px;
     height: 24px;
