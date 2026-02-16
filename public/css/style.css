@@ -15,9 +15,22 @@ html, body, #cesiumContainer {
   pointer-events: none;
 }
 .line-badge {
-  background: #FF6319; color: black; font-weight: bold; width: 30px; height: 30px;
-  display: flex; justify-content: center; align-items: center; border-radius: 50%;
-  margin-right: 15px; font-size: 18px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: #FF6319;
+  color: white;
+  font-family: 'Helvetica Neue', Arial, sans-serif;
+  font-weight: bold;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  margin-right: 15px;
 }
 .title { 
   font-weight: 300; 
@@ -86,4 +99,90 @@ html, body, #cesiumContainer {
 }
 .material-icons {
     font-size: 12px;
+}
+#line-toggle-container {
+  position: absolute;
+  top: 100px;
+  left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 10000;
+  pointer-events: auto;
+}
+.group-row {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 4px 8px;
+  border-radius: 20px;
+  width: fit-content;
+}
+.line-toggle-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  color: white;
+  font-family: 'Helvetica Neue', Arial, sans-serif;
+  font-weight: bold;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+.line-toggle-btn[data-line="N"], 
+.line-toggle-btn[data-line="Q"], 
+.line-toggle-btn[data-line="R"], 
+.line-toggle-btn[data-line="W"] {
+  color: black;
+}
+.line-toggle-btn:hover {
+  transform: scale(1.1);
+  filter: brightness(1.2);
+}
+.line-toggle-btn.is-off {
+  background-color: #222 !important;
+  color: #555;
+  border-color: #444;
+  box-shadow: none;
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+#line-toggle-container::-webkit-scrollbar {
+  width: 4px;
+}
+#line-toggle-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+}
+.master-toggle-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    border: 2px solid white;
+    color: white;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    margin-right: 10px;
+    transition: all 0.2s;
+    pointer-events: auto;
+}
+.master-toggle-btn .material-icons {
+    font-size: 14px;
+}
+.master-toggle-btn.is-off {
+    opacity: 0.4;
+    background: transparent;
+}
+.master-toggle-btn.is-off .material-icons {
+    content: 'visibility_off';
 }

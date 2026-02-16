@@ -11,28 +11,27 @@
 Cesium.Ion.defaultAccessToken = '';
 
 const appState = {
-
     isLoaded: false,
     isUpdating: false, // Mutex lock to prevent overlapping network requests
     
-    // Cesium Core
     viewer: null,
     
     // 3D Assets
     tileset_customModel: null,
     tileset_nycBuildings: null,
-    hideConditions: [],
+    hiddenBuildings: [],
 
     // Subway Line Data
     subwayLinesData: null,
     routeMap: {},
     flattenedRouteMap: {},
+    hiddenLines: new Set(),
     
     // Train Tracking
     trainEntities: {},
     lastKnownCoords: {},
     lastSeenTimes: {},
-    isUpdating: false,
+    polylineCollection: null,
 
     // UI Elements
     ui: {
@@ -72,7 +71,7 @@ function flyToTopDown() {
 
 // Toggles the Custom 3D Model's visibility and hides overlapping buildings in the ion NYC tileset
 function toggleModel() {
-    const { tileset_customModel, tileset_nycBuildings, hideConditions, ui } = appState;
+    const { tileset_customModel, tileset_nycBuildings, hiddenBuildings, ui } = appState;
 
     tileset_customModel.show = !tileset_customModel.show;
 
@@ -80,14 +79,14 @@ function toggleModel() {
         ui.toggleModelButton.classList.remove('is-off');
         ui.toggleModelButton.innerText = "Model: ON";
 
-        if (!(hideConditions && hideConditions.length > 0)) return;
+        if (!(hiddenBuildings && hiddenBuildings.length > 0)) return;
 
         // When our custom model is shown, we apply a style to the ion NYC tileset
         // to hide specific building IDs that overlap with the model.
         tileset_nycBuildings.style = new Cesium.Cesium3DTileStyle({
             color: 'color("grey", 1.0)',
             show: {
-                conditions : hideConditions
+                conditions : hiddenBuildings
             },
         });
     }
@@ -103,6 +102,47 @@ function toggleModel() {
     }
 }
 
+function toggleLineVisibility(lineKey, forceState = null) {
+    const isHidden = appState.hiddenLines.has(lineKey);
+    const shouldHide = (forceState !== null) ? !forceState : !isHidden;
+
+    if (shouldHide) {
+        appState.hiddenLines.add(lineKey);
+    } else {
+        appState.hiddenLines.delete(lineKey);
+    }
+
+    Object.values(appState.trainEntities).forEach(entity => {
+        if (entity.route === lineKey) {
+            entity.show = !shouldHide;
+        }
+    });
+
+    if (appState.polylineCollection) {
+        appState.polylineCollection._polylines.forEach(polyline => {
+            if (!polyline.lineID) return;
+            const routesOnTrack = polyline.lineID.split(/[- ]+/);
+            polyline.show = routesOnTrack.some(r => !appState.hiddenLines.has(r));
+        });
+    }
+}
+
+function toggleGroupVisibility(lines, masterBtn) {
+    const targetOn = masterBtn.classList.contains('is-off');
+
+    lines.forEach(line => {
+        const lineBtn = document.querySelector(`.line-toggle-btn[data-line="${line}"]`);
+        
+        if (lineBtn) {
+            targetOn ? lineBtn.classList.remove('is-off') : lineBtn.classList.add('is-off');
+        }
+
+        toggleLineVisibility(line, targetOn);
+    });
+
+    targetOn ? masterBtn.classList.remove('is-off') : masterBtn.classList.add('is-off');
+}
+
 // --- Data Loading Functions ---
 
 // Fetches subway line data and renders it in our scene
@@ -113,7 +153,7 @@ async function loadSubwayLines(state) {
         const response = await fetch('https://data.ny.gov/api/geospatial/s692-irgq?method=export&format=GeoJSON');
         state.subwayLinesData = await response.json();
         
-        // We pre-process the NYC subway tracks for easy lookup
+        // We pre-process the NYC subway tracks for easy lookup.
         state.subwayLinesData.features.forEach(feature => {
             const service = feature.properties.service;
             if (!service) return;
@@ -131,7 +171,7 @@ async function loadSubwayLines(state) {
                 
                 const lineColorHex = getMTAColor(lineKey).toCssHexString();
 
-                // We only associate track geometry with a line if the colors match
+                // We only associate track geometry with a line if the colors match.
                 if (lineColorHex === trackColorHex) {
                     if (!state.flattenedRouteMap[lineKey]) {
                         state.flattenedRouteMap[lineKey] = [];
@@ -141,23 +181,99 @@ async function loadSubwayLines(state) {
             });
         });
 
-        // We draw the subway tracks
+        // We draw the subway tracks.
         const subwaySource = await Cesium.GeoJsonDataSource.load(state.subwayLinesData, {
             stroke: Cesium.Color.TRANSPARENT,
             fill: Cesium.Color.TRANSPARENT
         });
        
-        const polylineCollection = viewer.scene.primitives.add(new Cesium.PolylineCollection());
+        state.polylineCollection = viewer.scene.primitives.add(new Cesium.PolylineCollection());
 
         subwaySource.entities.values.forEach(entity => {
             const service = entity.properties.service.getValue();
-            polylineCollection.add({
+            const polyline = state.polylineCollection.add({
                 positions: entity.polyline.positions.getValue(Cesium.JulianDate.now()),
                 width: 4,
-                material: Cesium.Material.fromType('Color', { color: getMTAColor(service) })
+                material: Cesium.Material.fromType('Color', { color: getMTAColor(service.split(/[- ]+/)[0]) })
             });
+            // We attach a custom lineID property so we can toggle each subway line's visibility.
+            polyline.lineID = service.trim().toUpperCase();
         });
-    } catch (error) { console.error(error); }
+
+        createSubwayLineToggles(state);
+
+    } catch (error) { 
+        console.error("Subway Initialization Error:", error);
+    }
+}
+
+function createSubwayLineToggles(state) {
+    const container = document.getElementById('line-toggle-container');
+    container.innerHTML = '';
+
+    const groups = [
+        { name: '7th-Ave', lines: ['1', '2', '3'] },
+        { name: 'Lexington', lines: ['4', '5', '6'] },
+        { name: '8th-Ave', lines: ['A', 'C', 'E'] },
+        { name: '6th-Ave', lines: ['B', 'D', 'F', 'M'] },
+        { name: 'Broadway', lines: ['N', 'Q', 'R', 'W'] },
+        { name: 'Flushing', lines: ['7'] },
+        { name: 'Canarsie', lines: ['L'] },
+        { name: 'Crosstown', lines: ['G'] },
+        { name: 'Archer', lines: ['J', 'Z'] },
+        { name: 'Staten-Island', lines: ['SIR'] }
+    ];
+
+    groups.forEach(group => {
+        const row = document.createElement('div');
+        row.className = 'group-row';
+
+        const groupColor = getMTAColor(group.lines[0]).toCssColorString();
+
+        // We make toggle buttons for each subway line group.
+        const groupToggleButton = document.createElement('button');
+        groupToggleButton.className = 'master-toggle-btn';
+        groupToggleButton.innerHTML = '<span class="material-icons">visibility</span>';
+        groupToggleButton.style.borderColor = groupColor;
+        groupToggleButton.title = `Toggle all ${group.name} lines`;
+        
+        groupToggleButton.onclick = () => toggleGroupVisibility(group.lines, groupToggleButton);
+        row.appendChild(groupToggleButton);
+
+        // We make toggle buttons for each subway line.
+        group.lines.forEach(line => {
+            const toggleButton = document.createElement('button');
+            toggleButton.innerText = line;
+            toggleButton.className = 'line-toggle-btn';
+            toggleButton.dataset.line = line;
+            toggleButton.style.backgroundColor = getMTAColor(line).toCssColorString();
+
+            toggleButton.onclick = () => {
+                // We toggle the line's state.
+                toggleButton.classList.toggle('is-off');
+                toggleLineVisibility(line);
+
+                // We find the group toggle button for this specific row.
+                const row = toggleButton.closest('.group-row');
+                const masterButton = row.querySelector('.master-toggle-btn');
+                const allChildButtons = row.querySelectorAll('.line-toggle-btn');
+                
+                // The group button only stays ON if no children are OFF.
+                // So, we check if all child subway lines are ON.
+                const anyOff = Array.from(allChildButtons).some(b => b.classList.contains('is-off'));
+                
+                if (anyOff) {
+                    masterButton.classList.add('is-off');
+                } else {
+                    masterButton.classList.remove('is-off');
+                }
+            };
+
+            row.appendChild(toggleButton);
+        });
+
+        container.appendChild(row);
+    });
 }
 
 // Loads and stylizes our 3D building tilesets
@@ -179,7 +295,7 @@ async function loadBuildings(state) {
             `
         });
     } catch (error) {
-        console.error("Initialization Error:", error);
+        console.error("Buildings Initialization Error:", error);
     }
 
     try {
@@ -208,7 +324,7 @@ async function loadBuildings(state) {
 
 // Polls our custom middleware API for live train data
 async function updateTrains(state) {
-    // We skip this update if data is not ready, or a previous request is still pending
+    // We skip this update if data is not ready, or a previous request is still pending.
     if (!state.subwayLinesData || !state.flattenedRouteMap || state.isUpdating) return;
     
     state.isUpdating = true;
@@ -217,8 +333,8 @@ async function updateTrains(state) {
         const currentTime = state.viewer.clock.currentTime;
         const trainSpeed = 18; // We set our average subway speed (m/s)
 
-        // We fetch our train data from our custom Vercel Proxy server
-        const response = await fetch('/api/subway');
+        // We fetch our train data from our custom Vercel Proxy server.
+        const response = await fetch('https://mta-proxy.vercel.app/api/subway');
         const allTrains = await response.json();
 
         // We use a chunk processor to spread the work across multiple frames.
@@ -324,7 +440,7 @@ function findPositionAlongTrack(train, rawPos) {
 function updateTrainAnimation(state, entity, newPos, closestLine, snappedNew, currentTime, targetSpeed) {
     const trainId = entity.id;
 
-    // We get the current interpolated position
+    // We get the current interpolated position.
     const currentPos = entity.position.getValue(currentTime);
     if (!currentPos) return;
 
@@ -339,13 +455,13 @@ function updateTrainAnimation(state, entity, newPos, closestLine, snappedNew, cu
     newProperty.addSample(currentTime, currentPos);
 
     // We use turf.lineSlice to generate points along the curved track geometry.
-    const currentCart = Cesium.Cartographic.fromCartesian(currentPos);
-    const startPt = turf.point([
-        Cesium.Math.toDegrees(currentCart.longitude), 
-        Cesium.Math.toDegrees(currentCart.latitude)
+    const currentLLH = Cesium.Cartographic.fromCartesian(currentPos);
+    const startPoint = turf.point([
+        Cesium.Math.toDegrees(currentLLH.longitude), 
+        Cesium.Math.toDegrees(currentLLH.latitude)
     ]);
     
-    const pathSlice = turf.lineSlice(startPt, snappedNew, closestLine);
+    const pathSlice = turf.lineSlice(startPoint, snappedNew, closestLine);
     let coords = pathSlice.geometry.coordinates;
 
     if (coords.length > 1) {
@@ -381,13 +497,15 @@ function createNewTrain(state, train, newPos, currentTime) {
     // Note: For production apps using large amounts of entities, consider PrimitiveCollections for optimization.
     state.trainEntities[train.id] = state.viewer.entities.add({
         id: train.id,
+        route: train.route,
+        show: !state.hiddenLines.has(train.route),
         position: property,
         point: { 
             pixelSize: 10, 
             color: getMTAColor(train.route),
             outlineWidth: 2,
 
-            // We disable depth testing so trains are always visible
+            // We disable depth testing so trains are always visible.
             disableDepthTestDistance: Number.POSITIVE_INFINITY 
         },
         label: { 
@@ -395,7 +513,7 @@ function createNewTrain(state, train, newPos, currentTime) {
             font: '14pt monospace', 
             pixelOffset: new Cesium.Cartesian2(0, -16),
 
-            // We disable depth testing so labels are always visible
+            // We disable depth testing so labels are always visible.
             disableDepthTestDistance: Number.POSITIVE_INFINITY
         }
     })
@@ -407,8 +525,8 @@ function createNewTrain(state, train, newPos, currentTime) {
 
 // Sets up the Cesium Viewer with Cesium World Terrain and custom stylized settings
 async function initCesium() {
-    // We fetch our API token from a secure backend
-    const configResponse = await fetch('/api/config');
+    // We fetch our API token from a secure backend.
+    const configResponse = await fetch('https://mta-proxy.vercel.app/api/config');
     const configData = await configResponse.json();
     
     if (!configData.cesiumToken) throw new Error("Token not found in config response");
@@ -442,13 +560,13 @@ async function initCesium() {
         const sentinelImagery = await Cesium.IonImageryProvider.fromAssetId(3954);
         const sentinelLayer = viewer.imageryLayers.addImageryProvider(sentinelImagery);
 
-        // We alter the imagery style to create a dark mode effect
+        // We alter the imagery style to create a dark mode effect.
         sentinelLayer.brightness = 0.2;
         sentinelLayer.contrast = 0.8;
         sentinelLayer.saturation = 0.2;
         sentinelLayer.hue = 0.6;
 
-        // We alter the environment style to create a dark mode effect
+        // We alter the environment style to create a dark mode effect.
         const { scene } = viewer;
         scene.sun.show = false;
         scene.moon.show = false;
@@ -460,7 +578,7 @@ async function initCesium() {
         scene.fog.enabled = false;
         scene.fog.color = Cesium.Color.BLACK;
 
-        // We set our initial camera view
+        // We set our initial camera view.
         viewer.camera.setView({
             destination: Cesium.Cartesian3.fromDegrees(-74.028, 40.698, 600),
             orientation: {
